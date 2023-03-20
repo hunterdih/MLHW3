@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import random
 import math
 import time
+import os
 
 random.seed(0)
 
@@ -46,7 +47,7 @@ def simple_mlp_model(x_train,
                      loss_function='sparse_categorical_crossentropy',
                      data_metrics=['accuracy'],
                      epoch_metric='val_loss',
-                     time_limit=0.5,
+                     time_limit=5,
                      optimal_train=False,
                      fold_number=0,
                      sample_number=0,
@@ -88,7 +89,7 @@ def simple_mlp_model(x_train,
     model.compile(optimizer=optimizer_function, loss=loss_function, metrics=data_metrics)
 
     # Initial Train
-    history = model.fit(x_train, y_train, validation_split=0.15, batch_size=150, epochs=10, verbose=0)
+    history = model.fit(x_train, y_train, validation_split=0.15, batch_size=100, epochs=50, verbose=0)
     start_time = time.time()
     accuracy = history.history['accuracy']
     validation_accuracy = history.history['val_accuracy']
@@ -96,7 +97,7 @@ def simple_mlp_model(x_train,
     validation_loss = history.history['val_loss']
     epochs = 0
     difference = abs(history.history[epoch_metric][0] - history.history[epoch_metric][9])
-    epochs += 10
+    epochs += 50
     print(f'{epochs=}')
 
     # Train until the accuracy difference between 10 epochs is less than 0.1% or n minutes has elapsed
@@ -149,9 +150,9 @@ def simple_mlp_model(x_train,
     if verbose:
         plt.show()
     if save_figs:
-        fig0.savefig(OUTPATH + f'/{sample_number}samples_{num_perceptrons}perceptrons_{fold_number}fold_acc')
-        fig1.savefig(OUTPATH + f'/{sample_number}samples_{num_perceptrons}perceptrons_{fold_number}fold_loss')
-        fig2.savefig(OUTPATH + f'/{sample_number}samples_{num_perceptrons}perceptrons_{fold_number}fold_cm')
+        fig0.savefig(OUTPATH + f'/{num_perceptrons}_perceptrons/{sample_number}samples__{fold_number}fold_acc')
+        fig1.savefig(OUTPATH + f'/{num_perceptrons}_perceptrons/{sample_number}samples__{fold_number}fold_loss')
+        fig2.savefig(OUTPATH + f'/{num_perceptrons}_perceptrons/{sample_number}samples__{fold_number}fold_cm')
 
     fig0.clear()
     fig1.clear()
@@ -232,8 +233,9 @@ def generate_data(samples):
 if __name__ == '__main__':
     print(f'Starting...')
     target_parameter = "label"
-    optimal_train = False
+    optimal_train = True
     n_folds_crossvalidate = True
+    verb = False
     n_folds = 10
     perceptron_limit = 20
     test_dataset = generate_data(100000)
@@ -247,13 +249,16 @@ if __name__ == '__main__':
     samples_list = [100, 200, 500, 1000, 2000, 5000]
     sample_size_error_list = []
     sample_size_best_pred_list = []
-    model_list = []
     sample_size_perceptrons = []
-    verb = False
+
+    y_test_100k = test_dataset[target_parameter]
+    x_test_100k = test_dataset.drop(target_parameter, axis=1)
+    x_test_100k = pd.DataFrame(MinMaxScaler().fit_transform(x_test_100k.loc[:].values), columns=x_test_100k.columns)
 
     for samples in samples_list:
         perceptron_error_list = []
         perceptron_y_pred_list = []
+        # model_sel_list = [] # uncomment if more than 32gb ram
         fold_selection = []
         dataset = generate_data(samples)
 
@@ -262,7 +267,8 @@ if __name__ == '__main__':
 
             # Iterate through number of perceptrons in the first layer
             for num_perceptrons in range(1, perceptron_limit + 1):
-
+                if not os.path.exists(OUTPATH + f'/{num_perceptrons}_perceptrons'):
+                    os.makedirs(OUTPATH + f'/{num_perceptrons}_perceptrons')
                 index_list = n_folds_calc(dataset, n_folds)
                 acc_list = []
                 acc_val_list = []
@@ -271,6 +277,7 @@ if __name__ == '__main__':
                 epoch_list = []
                 err_list = []
                 y_pred_list = []
+                # mdl_list = [] # uncomment if more than 32gb ram
 
                 # Iterate through each fold
                 for i in range(n_folds):
@@ -284,9 +291,9 @@ if __name__ == '__main__':
                     x_train = pd.DataFrame(MinMaxScaler().fit_transform(x_train.loc[:].values), columns=x_train.columns)
                     x_test = test.drop(target_parameter, axis=1)
                     x_test = pd.DataFrame(MinMaxScaler().fit_transform(x_test.loc[:].values), columns=x_test.columns)
-                    max_acc, max_acc_val, min_loss, min_loss_val, epoch_chosen, err, y_pred, _ = simple_mlp_model(np.asarray(x_train), y_train, np.asarray(x_test), y_test, verbose=0,
-                                                                                                                  layer_1_nodes=num_perceptrons, optimal_train=optimal_train, fold_number=i,
-                                                                                                                  sample_number=samples)
+                    max_acc, max_acc_val, min_loss, min_loss_val, epoch_chosen, err, y_pred, mdl = simple_mlp_model(np.asarray(x_train), y_train, np.asarray(x_test), y_test, verbose=0,
+                                                                                                                    layer_1_nodes=num_perceptrons, optimal_train=optimal_train, fold_number=i,
+                                                                                                                    sample_number=samples, save_figs=True)
                     acc_list.append(max_acc)
                     acc_val_list.append(max_acc_val)
                     loss_list.append(min_loss)
@@ -294,14 +301,19 @@ if __name__ == '__main__':
                     epoch_list.append(epoch_chosen)
                     err_list.append(err)
                     y_pred_list.append(y_pred)
+                    # mdl_list.append(mdl) # uncomment if more than 32gb ram
 
                 index_chosen = err_list.index(min(err_list))
-                perceptron_error_list.append(min(err_list))
+                perceptron_error_list.append(min(err_list))  # Append min error for given perceptron count across all n-folds
+                # model_sel_list.append(mdl_list[index_chosen]) # uncomment if more than 32gb ram
+                perceptron_y_pred_list.append(y_pred_list[index_chosen])  # Append results for min error of given perceptron count across all n-folds
+                fold_selection.append(err_list.index(min(err_list)))  # Append the fold that generated the minimum error
 
-                perceptron_y_pred_list.append(y_pred_list[index_chosen])
-                fold_selection.append(err_list.index(min(err_list)))
-
-            use_fold = perceptron_error_list.index(min(perceptron_error_list))
+            index_chosen = perceptron_error_list.index(min(perceptron_error_list))
+            perceptron_chosen = perceptron_error_list[index_chosen]
+            use_fold = fold_selection[index_chosen]
+            # model = model_sel_list[index_chosen] # uncomment if more than 32gb ram
+            # model_sel_list = [] # uncomment if more than 32gb ram
             print(f'Fold Chosen: {use_fold}')
             train, test = n_folds_split(dataset, index_list, use_fold)
 
@@ -313,9 +325,17 @@ if __name__ == '__main__':
             x_test = test.drop(target_parameter, axis=1)
             x_test = pd.DataFrame(MinMaxScaler().fit_transform(x_test.loc[:].values), columns=x_test.columns)
             verb = False
-            _1, _2, _3, _4, _5, _6, _7, model = simple_mlp_model(np.asarray(x_train), y_train, np.asarray(x_test), y_test, verbose=verb, layer_1_nodes=num_perceptrons, optimal_train=optimal_train,
-                                                                 fold_number=use_fold, sample_number=samples, save_figs=True)
 
+            _, _, _, _, _, _, _, model = simple_mlp_model(np.asarray(x_train),
+                                                          y_train,
+                                                          np.asarray(x_test),
+                                                          y_test,
+                                                          verbose=1,
+                                                          layer_1_nodes=perceptron_chosen,
+                                                          optimal_train=optimal_train,
+                                                          fold_number=use_fold,
+                                                          sample_number=samples,
+                                                          save_figs=True)
             fig3 = plt.figure(3)
             plt.plot(acc_list)
             plt.plot(acc_val_list)
@@ -339,20 +359,36 @@ if __name__ == '__main__':
             plt.ylabel('Loss')
             plt.xlabel('Perceptrons')
             plt.legend(['Perceptron Loss', 'Optimal Loss'], loc='upper left')
+
+            y_pred_100k = model.predict(x_test)
+
+            print(f'Running Final Evaluation on 100000 Test Set...')
+            fig7 = plt.figure(7)
+            y_results_test = pd.DataFrame(y_pred_100k)
+            y_results_test = y_results_test.idxmax(axis=1)
+            cm_100k = confusion_matrix(y_test_100k, y_pred_100k, normalize='true')
+            plt.imshow(cm_100k, cmap='BuPu')
+            for (i, j), label in np.ndenumerate(cm_100k):
+                plt.text(j, i, str(round(label, 4)), ha='center', va='center')
+            plt.colorbar
+            error = round(np.sum(1 - cm_100k.diagonal()) / cm_100k.shape[0], 4)
+            plt.title('Confusion Matrix, Test Samples')
+            plt.ylabel('True Label')
+            plt.xlabel(f'Predicted Label, Error = {error}, Optimal Error = {opt_err}')
+            fig3.savefig(OUTPATH + f'/{samples}_samples_{i}fold_acc_result')
+            fig3.clear()
+            fig4.savefig(OUTPATH + f'/{samples}_samples_{i}fold_loss_result')
+            fig4.clear()
+            fig5.savefig(OUTPATH + f'/{samples}_samples_{i}fold_error_result')
+            fig5.clear()
+            fig7.savefig(OUTPATH + f'/{samples}_samples_{perceptron_chosen}_perceptrons_{fold_selection}_folds_test_result_confusion_matrix')
+            fig7.clear()
             if verb:
                 plt.show()
-            fig3.savefig(OUTPATH + f'/{samples}samples_{num_perceptrons}perceptrons_{i}fold_acc_result')
-            fig3.clear()
-            fig4.savefig(OUTPATH + f'/{samples}samples_{num_perceptrons}perceptrons_{i}fold_loss_result')
-            fig4.clear()
-            fig5.savefig(OUTPATH + f'/{samples}samples_{num_perceptrons}perceptrons_{i}fold_error_result')
-            fig5.clear()
-
             index_chosen = perceptron_error_list.index(min(perceptron_error_list))
             sample_size_error_list.append(perceptron_error_list[index_chosen])
             sample_size_best_pred_list.append(perceptron_y_pred_list[index_chosen])
             sample_size_perceptrons.append(index_chosen + 1)
-            model_list.append(model)
 
     fig6 = plt.figure(6)
     plt.semilogx(samples_list, sample_size_error_list, marker='.')
@@ -363,27 +399,7 @@ if __name__ == '__main__':
     plt.legend(['Sample Loss', 'Optimal Loss'], loc='upper left')
 
     index_chosen = sample_size_error_list.index(min(sample_size_error_list))
-    model = model_list[index_chosen]
-    print(f'Running Final Evaluation on 100000 Test Set...')
-
-    y_test = test_dataset[target_parameter]
-    x_test = test_dataset.drop(target_parameter, axis=1)
-    x_test = pd.DataFrame(MinMaxScaler().fit_transform(x_test.loc[:].values), columns=x_test.columns)
-    y_pred = model.predict(x_test)
-
-    fig7 = plt.figure(7)
-    y_results_test = pd.DataFrame(y_pred)
-    y_results_test = y_results_test.idxmax(axis=1)
-    cm = confusion_matrix(y_test, y_results_test, normalize='true')
-    plt.imshow(cm, cmap='BuPu')
-    for (i, j), label in np.ndenumerate(cm):
-        plt.text(j, i, str(round(label, 4)), ha='center', va='center')
-    plt.colorbar
-    error = round(np.sum(1 - cm.diagonal()) / cm.shape[0], 4)
-    plt.title('Confusion Matrix, Test Samples')
-    plt.ylabel('True Label')
-    plt.xlabel(f'Predicted Label, Error = {error}, Optimal Error = {opt_err}')
     fig6.savefig(OUTPATH + f'/sample_size_error_vs_optimal_error')
-    fig7.savefig(OUTPATH+ f'/test_result_confusion_matrix')
+
     plt.show()
     print(f'Done...')
