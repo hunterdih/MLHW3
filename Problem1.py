@@ -1,3 +1,5 @@
+import os
+os.environ["OMP_NUM_THREADS"] = '1'
 from keras.models import Sequential
 from keras.layers import Dense
 import pandas as pd
@@ -10,7 +12,7 @@ import matplotlib.pyplot as plt
 import random
 import math
 import time
-import os
+
 
 random.seed(0)
 
@@ -54,9 +56,11 @@ def simple_mlp_model(x_train,
                      save_figs=False,
                      warm_epoch_count=50,
                      batch_size=100,
+                     priors=0,
                      verbose=True):
     """
 
+    :param priors:
     :param fold_number:
     :param time_limit:
     :param optimal_train:
@@ -81,6 +85,16 @@ def simple_mlp_model(x_train,
     numParameters = x_train.shape[1]
     # label_num = int(np.max(y_test)) + 1 # Dynamic way to determine number of labels
     label_num = 4
+
+    # Calculate priors
+    priors_list = []
+    temp_df = pd.DataFrame()
+    ty = y_test.reset_index().drop('index', axis=1)
+    temp_df['y_test'] = ty
+    for class_label in range(label_num):
+        count = temp_df[temp_df['y_test']==class_label].shape[0]
+        priors_list.append(count/y_test.shape[0])
+
     # Create the model
     model = Sequential()
     model.add(Dense(units=layer_1_nodes, kernel_initializer='random_uniform', activation='elu', input_dim=numParameters))
