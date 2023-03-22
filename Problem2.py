@@ -99,6 +99,7 @@ def plot_gmm_results(data, predictions, gauss_comp, fld, test_number):
     fig1 = plt.figure(1, figsize=(12, 9))
     plt.xlabel('x')
     plt.ylabel('y')
+    plt.tight_layout()
     plt.title(f'{data.shape[0]} Samples, Fold {fld}, {gauss_comp} Gaussian Components')
     color_list = ['r', 'g', 'b', 'orange', 'brown', 'yellow']
     for i in range(classes + 1):
@@ -132,6 +133,10 @@ if __name__ == '__main__':
             dataset.columns = ['x', 'y', 'label']
             fig0 = plt.figure(0, figsize=(12,9))
             plt.scatter(dataset['x'], dataset['y'])
+            plt.title(f'{sample_size} Samples')
+            plt.xlabel('x')
+            plt.ylabel('y')
+            plt.tight_layout()
             if not os.path.exists(OUTPATH + '/results'):
                 os.makedirs(OUTPATH + '/results')
             fig0.savefig(OUTPATH + f'/results/{sample_size}_sample_dataset_test_{test_number}')
@@ -162,6 +167,7 @@ if __name__ == '__main__':
                     print(f'Log Likelihood For {test_number=}, {sample_size=}, {gaussian_params=}, {fold=} = {log_likelihood}')
                     log_likelihood_fold_list.append(log_likelihood)
 
+                # Take the best fold
                 index = log_likelihood_fold_list.index(max(log_likelihood_fold_list))
                 log_likelihood_per_component.append(log_likelihood_fold_list[index])
                 best_model_per_component.append(index + 1)
@@ -187,6 +193,7 @@ if __name__ == '__main__':
             plt.plot(gmm_component_list, log_likelihood_per_component)
             plt.ylabel('Log Likelihood')
             plt.xlabel('Gaussian Parameters')
+            plt.tight_layout()
             plt.xticks(gmm_component_list)
             fig2.savefig(OUTPATH + f'/results/{sample_size}_sample_log_likelihood_param_test_{test_number}')
             fig2.clear()
@@ -195,6 +202,7 @@ if __name__ == '__main__':
         plt.title('Log Likelihood vs. Sample Size')
         plt.ylabel('Log Likelihood')
         plt.xlabel('Sample Size')
+        plt.tight_layout()
         plt.semilogx(dataset_sizes, log_likelihood_per_sample, marker='.')
         fig3.savefig(OUTPATH + f'/results/log_likelihood_vs_sample_size_test_{test_number}')
         fig3.clear()
@@ -205,6 +213,7 @@ if __name__ == '__main__':
     fig4 = plt.figure(4, figsize=(12,9))
     plt.title('GMM Component Selection Occurrences (Max Likelihood Per Samples)')
     plt.ylabel('Occurrences')
+    plt.tight_layout()
     plt.xlabel(f'GMM Model, (Values={gmm_component_selected_list}')
     plt.xticks(gmm_component_list)
     plt.bar(gmm_component_list, gmm_component_selected_list)
@@ -215,6 +224,7 @@ if __name__ == '__main__':
     plt.title('GMM Component Selection Occurrences\n(Max Likelihood Each Sample, Each Test)')
     plt.ylabel('Occurrences')
     plt.xlabel(f'GMM Model, (Values={gmm_component_selected_per_sample}')
+    plt.tight_layout()
     plt.xticks(gmm_component_list)
     plt.bar(gmm_component_list, gmm_component_selected_per_sample)
     fig5.savefig(OUTPATH + f'/results/GMM_OCCURRENCES_PER_SAMPLE_PER_TEST')

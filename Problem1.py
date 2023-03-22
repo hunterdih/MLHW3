@@ -1,5 +1,7 @@
 import os
+
 os.environ["OMP_NUM_THREADS"] = '1'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from keras.models import Sequential
 from keras.layers import Dense
 import pandas as pd
@@ -7,14 +9,15 @@ import numpy as np
 from sklearn.naive_bayes import GaussianNB
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from scipy.stats import multivariate_normal
 from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import random
 import math
 import time
+import numpy.matlib
 
-
-random.seed(0)
+random.seed(3)
 
 M1 = [3, 3, 3]
 C1 = [[2, 0, 0],
@@ -56,7 +59,7 @@ def simple_mlp_model(x_train,
                      save_figs=False,
                      warm_epoch_count=50,
                      batch_size=100,
-                     priors=0,
+                     map=False,
                      verbose=True):
     """
 
@@ -87,13 +90,14 @@ def simple_mlp_model(x_train,
     label_num = 4
 
     # Calculate priors
-    priors_list = []
-    temp_df = pd.DataFrame()
-    ty = y_test.reset_index().drop('index', axis=1)
-    temp_df['y_test'] = ty
-    for class_label in range(label_num):
-        count = temp_df[temp_df['y_test']==class_label].shape[0]
-        priors_list.append(count/y_test.shape[0])
+    if map:
+        priors_list = []
+        temp_df = pd.DataFrame()
+        ty = y_test.reset_index().drop('index', axis=1)
+        temp_df['y_test'] = ty
+        for class_label in range(label_num):
+            count = temp_df[temp_df['y_test'] == class_label].shape[0]
+            priors_list.append(count / y_test.shape[0])
 
     # Create the model
     model = Sequential()
@@ -114,7 +118,6 @@ def simple_mlp_model(x_train,
     epochs = 0
     difference = abs(history.history[epoch_metric][0] - history.history[epoch_metric][9])
     epochs += warm_epoch_count
-    print(f'{epochs=}')
 
     # Train until the accuracy difference between 10 epochs is less than 0.1% or n minutes has elapsed
     elapsed_time = 0
@@ -132,7 +135,9 @@ def simple_mlp_model(x_train,
             print(f'{epochs=}')
 
     y_results_test = model.predict(x_test)
-    print(history.history.keys())
+    if map:
+        y_results_test *= np.array(priors_list)
+    # print(history.history.keys())
     # summarize history for accuracy
     fig0 = plt.figure(0)
     plt.plot(accuracy)
@@ -160,15 +165,15 @@ def simple_mlp_model(x_train,
         plt.text(j, i, str(round(label, 4)), ha='center', va='center')
     plt.colorbar
     error = round(np.sum(1 - cm.diagonal()) / cm.shape[0], 4)
-    plt.title(f'Confusion Matrix {layer_1_nodes} Perceptrons')
+    plt.title(f'Confusion Matrix {layer_1_nodes} Perceptrons (n-fold)')
     plt.ylabel('True Label')
-    plt.xlabel(f'Predicted Label, Error = {error}')
+    plt.xlabel(f'Predicted Label, Error = {error}, Epochs= {epochs}')
     if verbose:
         plt.show()
     if save_figs:
-        fig0.savefig(OUTPATH + f'/{num_perceptrons}_perceptrons/{sample_number}samples__{fold_number}fold_acc')
-        fig1.savefig(OUTPATH + f'/{num_perceptrons}_perceptrons/{sample_number}samples__{fold_number}fold_loss')
-        fig2.savefig(OUTPATH + f'/{num_perceptrons}_perceptrons/{sample_number}samples__{fold_number}fold_cm')
+        fig0.savefig(OUTPATH + f'/{num_perceptrons}_perceptrons/{sample_number}samples__{fold_number}fold_acc_epochs_{epochs}')
+        fig1.savefig(OUTPATH + f'/{num_perceptrons}_perceptrons/{sample_number}samples__{fold_number}fold_loss_epochs_{epochs}')
+        fig2.savefig(OUTPATH + f'/{num_perceptrons}_perceptrons/{sample_number}samples__{fold_number}fold_cm_epochs_{epochs}')
 
     fig0.clear()
     fig1.clear()
@@ -177,12 +182,30 @@ def simple_mlp_model(x_train,
     return max(accuracy), max(validation_accuracy), min(loss), min(validation_loss), epochs, error, y_results_test, model
 
 
-def optimal_classifier(x_train, x_test, y_train, y_test):
+def optimal_classifier(data, data_y, mu, sigma, p, classes):
+    '''
     gnb = GaussianNB()
     y_pred = gnb.fit(x_train, y_train).predict(x_test)
     cm = confusion_matrix(y_test, y_pred, normalize='true')
     error = round(np.sum(1 - cm.diagonal()) / cm.shape[0], 4)
-    return error, y_pred
+    '''
+
+    # Adapted from Matlab Implementation in Projects, Summer 2 2020
+    N = data.shape[0]
+    p = np.asarray(p)
+    pxgivenl = []
+    for ind in range(classes):
+        eval = multivariate_normal.pdf(data.values, mu[ind], sigma[ind])
+        pxgivenl.append(eval)
+    pxgivenl = np.asarray(pxgivenl).T
+
+    plgivenx = pxgivenl * p
+
+    pred = np.argmax(plgivenx, axis=1)
+    results = pred != data_y
+    incorrect_results = pred[results]
+    error = incorrect_results.shape[0] / N
+    return error
 
 
 def n_folds_calc(dataset, folds):
@@ -252,21 +275,25 @@ if __name__ == '__main__':
     optimal_train = False
     n_folds_crossvalidate = True
     verb = False
-    n_folds = 2
-    perceptron_limit = 2
+    map_estimator = True
+    n_folds = 10
+    perceptron_limit = 10
+    perceptron_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    time_limit_per_epoch = 0.25  # Minutes
     epochs = 200
     test_dataset = generate_data(100000)
     y = test_dataset[target_parameter]
     x = test_dataset.drop(target_parameter, axis=1)
-    x = pd.DataFrame(MinMaxScaler().fit_transform(x.loc[:].values), columns=x.columns)
 
-    opt_err, opt_y_pred = optimal_classifier(x, x, y, y)
+    opt_err = optimal_classifier(x, y, [M1, M2, M3, M4], [C1, C2, C3, C4], [0.25, 0.25, 0.25, 0.25], 4)
+    x = pd.DataFrame(MinMaxScaler().fit_transform(x.loc[:].values), columns=x.columns)
     print(f'Optimal Minimum Error={opt_err}')
 
     samples_list = [100, 200, 500, 1000, 2000, 5000]
     sample_size_error_list = []
     sample_size_best_pred_list = []
     sample_size_perceptrons = []
+    sample_size_test_error_list = []
 
     if not os.path.exists(OUTPATH + '/results'):
         os.makedirs(OUTPATH + '/results')
@@ -284,7 +311,7 @@ if __name__ == '__main__':
         if samples <= 200:
             batch_size = int(samples / 2)
         else:
-            batch_size = 150
+            batch_size = 200
         # N-folds estimator
         if n_folds_crossvalidate:
 
@@ -297,14 +324,14 @@ if __name__ == '__main__':
                 acc_val_list = []
                 loss_list = []
                 loss_val_list = []
-                epoch_list = []
+                # epoch_list = []
                 err_list = []
                 y_pred_list = []
                 # mdl_list = [] # uncomment if more than 32gb ram
 
                 # Iterate through each fold
                 for i in range(n_folds):
-                    print(f'Folds {i}')
+                    print(f'Samples {samples}, Perceptrons {num_perceptrons}, Fold {i}, Epochs {epochs}')
                     train, test = n_folds_split(dataset, index_list, i)
 
                     y_train = train[target_parameter]
@@ -325,12 +352,14 @@ if __name__ == '__main__':
                                                                                                                     sample_number=samples,
                                                                                                                     save_figs=True,
                                                                                                                     batch_size=batch_size,
-                                                                                                                    warm_epoch_count=epochs)
+                                                                                                                    warm_epoch_count=epochs,
+                                                                                                                    map=map_estimator,
+                                                                                                                    time_limit=time_limit_per_epoch)
                     acc_list.append(max_acc)
                     acc_val_list.append(max_acc_val)
                     loss_list.append(min_loss)
                     loss_val_list.append(min_loss_val)
-                    epoch_list.append(epoch_chosen)
+                    # epoch_list.append(epoch_chosen)
                     err_list.append(err)
                     # mdl_list.append(mdl) # uncomment if more than system 32gb system ram
 
@@ -358,23 +387,25 @@ if __name__ == '__main__':
             x_test = pd.DataFrame(MinMaxScaler().fit_transform(x_test.loc[:].values), columns=x_test.columns)
             verb = False
 
-            _, _, _, _, _, _, _, model = simple_mlp_model(np.asarray(x_train),
-                                                          y_train,
-                                                          np.asarray(x_test),
-                                                          y_test,
-                                                          verbose=0,
-                                                          layer_1_nodes=perceptron_chosen,
-                                                          optimal_train=optimal_train,
-                                                          fold_number=use_fold,
-                                                          sample_number=samples,
-                                                          save_figs=True,
-                                                          batch_size=batch_size,
-                                                          warm_epoch_count=epochs + 300)
+            _, _, _, _, epoch_100k, error_test_sample, _, model = simple_mlp_model(np.asarray(x_train),
+                                                                                   y_train,
+                                                                                   np.asarray(x_test),
+                                                                                   y_test,
+                                                                                   verbose=0,
+                                                                                   layer_1_nodes=perceptron_chosen,
+                                                                                   optimal_train=True,
+                                                                                   fold_number=use_fold,
+                                                                                   sample_number=samples,
+                                                                                   save_figs=True,
+                                                                                   batch_size=batch_size,
+                                                                                   warm_epoch_count=epochs + 300,
+                                                                                   map=map_estimator,
+                                                                                   time_limit=2)
 
             fig3 = plt.figure(3)
             plt.plot(acc_list)
             plt.plot(acc_val_list)
-            plt.title(f'N-Folds Results (Accuracy) for {samples} Samples (Local Test Set)')
+            plt.title(f'N-Folds Results (Accuracy) for {samples} Samples (N-Fold Test Set)')
             plt.ylabel('Accuracy')
             plt.xlabel('Fold')
             plt.legend(['accuracy', 'validation accuracy'], loc='upper left')
@@ -382,15 +413,15 @@ if __name__ == '__main__':
             fig4 = plt.figure(4)
             plt.plot(loss_list)
             plt.plot(loss_val_list)
-            plt.title(f'N-Folds Results (Loss) for {samples} Samples (Local Test Set)')
+            plt.title(f'N-Folds Results (Loss) for {samples} Samples (N-Fold Test Set)')
             plt.ylabel('Loss')
             plt.xlabel('Fold')
             plt.legend(['loss', 'validation loss'], loc='upper left')
 
             fig5 = plt.figure(5)
-            plt.plot(perceptron_error_list)
+            plt.plot(perceptron_list, perceptron_error_list)
             plt.axhline(y=opt_err, color='r', linestyle='-')
-            plt.title(f'Perceptron Error vs. Optimal Error for {samples} Samples (Local Test Set)')
+            plt.title(f'Perceptron Error vs. Optimal Error for {samples} Samples (N-Fold Test Set)')
             plt.ylabel('Loss')
             plt.xlabel('Perceptrons')
             plt.legend(['Perceptron Loss', 'Optimal Loss'], loc='upper left')
@@ -399,16 +430,16 @@ if __name__ == '__main__':
             y_pred_100k = model.predict(x_test_100k)
             y_pred_100k = pd.DataFrame(y_pred_100k)
             y_pred_100k = y_pred_100k.idxmax(axis=1)
-            fig7 = plt.figure(7)
+            fig7 = plt.figure(7, figsize=(12, 9))
             cm_100k = confusion_matrix(y_test_100k, y_pred_100k, normalize='true')
             plt.imshow(cm_100k, cmap='BuPu')
             for (i, j), label in np.ndenumerate(cm_100k):
                 plt.text(j, i, str(round(label, 4)), ha='center', va='center')
             plt.colorbar
             error_100k = round(np.sum(1 - cm_100k.diagonal()) / cm_100k.shape[0], 4)
-            plt.title(f'Confusion Matrix, Test Samples, {perceptron_chosen}')
+            plt.title(f'Confusion Matrix 100k Test, {y_test.shape[0]} Test Samples, {perceptron_chosen} Perceptrons, Fold {use_fold}')
             plt.ylabel('True Label')
-            plt.xlabel(f'Predicted Label, Error = {error_100k}, Optimal Error = {opt_err}')
+            plt.xlabel(f'Predicted Label, Error = {error_100k}, Optimal Error = {opt_err}, Epochs = {epoch_100k}')
 
             fig8 = plt.figure(8, figsize=(12, 9))
             ax = fig8.add_subplot(projection='3d')
@@ -425,12 +456,12 @@ if __name__ == '__main__':
                 label_df = plotting_df[plotting_df['y_test'] == l]
                 label_miss = label_df[label_df['results'] == False]
                 label_match = label_df[label_df['results'] == True]
-                ax.scatter(label_match['x'], label_match['y'], label_match['z'], color='g', marker = marker_list[l], label=f'Correct Class {l}')
+                ax.scatter(label_match['x'], label_match['y'], label_match['z'], color='g', marker=marker_list[l], label=f'Correct Class {l}')
                 ax.scatter(label_miss['x'], label_miss['y'], label_miss['z'], color='r', marker=marker_list[l], label=f'Correct Class {l}')
             ax.set_xlabel('x')
             ax.set_ylabel('y')
             ax.set_zlabel('z')
-            plt.title(f'{samples} Samples, {perceptron_chosen} Perceptrons, Fold {use_fold}, Predictions')
+            plt.title(f'{samples} Samples, {perceptron_chosen} Perceptrons, Fold {use_fold}, Error {error_100k}, Epochs = {epoch_100k}, Predictions')
             plt.tight_layout()
             ax.legend()
             if verb:
@@ -442,24 +473,33 @@ if __name__ == '__main__':
             fig4.clear()
             fig5.savefig(OUTPATH + f'/results/{samples}_samples_{i}fold_error_result')
             fig5.clear()
-            fig7.savefig(OUTPATH + f'/results/{samples}_samples_{perceptron_chosen}_perceptrons_{use_fold}_folds_test_result_confusion_matrix')
+            fig7.savefig(OUTPATH + f'/results/{samples}_samples_{perceptron_chosen}_perceptrons_{use_fold}_folds_100k_test_result_confusion_matrix_epoch_{epoch_100k}')
             fig7.clear()
-            fig8.savefig(OUTPATH + f'/results/{samples}_samples_{perceptron_chosen}_perceptrons_{use_fold}_predictions')
+            fig8.savefig(OUTPATH + f'/results/{samples}_samples_{perceptron_chosen}_perceptrons_{use_fold}_predictions_100k_test_result_epoch_{epoch_100k}')
             fig8.clear()
 
             index_chosen = perceptron_error_list.index(min(perceptron_error_list))
             sample_size_error_list.append(perceptron_error_list[index_chosen])
             sample_size_perceptrons.append(index_chosen + 1)
+            sample_size_test_error_list.append(error_100k)
 
-    fig6 = plt.figure(6)
+    fig6 = plt.figure(6, figsize=(12, 9))
     plt.semilogx(samples_list, sample_size_error_list, marker='.')
     plt.axhline(y=opt_err, color='r', linestyle='-')
-    plt.title(f'Sample Size Error vs. Optimal Error')
+    plt.title(f'Sample Size Error vs. Optimal Error (Using N-Fold Test Error)')
     plt.ylabel('Loss')
     plt.xlabel('Sample Size')
     plt.legend(['Sample Loss', 'Optimal Loss'], loc='upper left')
 
     fig6.savefig(OUTPATH + f'/results/sample_size_error_vs_optimal_error')
 
-    plt.show()
+    fig7 = plt.figure(7, figsize=(12, 9))
+    plt.semilogx(samples_list, sample_size_test_error_list, marker='.')
+    plt.axhline(y=opt_err, color='r', linestyle='-')
+    plt.title(f'Sample Size Error vs. Optimal Error (Using 100K Test Set Error)')
+    plt.ylabel('Loss')
+    plt.xlabel('Sample Size')
+    plt.legend(['Sample Loss', 'Optimal Loss'], loc='upper left')
+
+    fig7.savefig(OUTPATH + f'/results/sample_size_error_vs_optimal_error_100k')
     print(f'Done...')
