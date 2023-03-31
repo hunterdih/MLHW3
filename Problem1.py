@@ -199,9 +199,9 @@ def optimal_classifier(data, data_y, mu, sigma, p, classes):
         pxgivenl.append(eval)
     pxgivenl = np.asarray(pxgivenl).T
 
-    plgivenx = pxgivenl * p
+    plgivenx_unnormalized = pxgivenl * p
 
-    pred = np.argmax(plgivenx, axis=1)
+    pred = np.argmax(plgivenx_unnormalized, axis=1)
     results = pred != data_y
     incorrect_results = pred[results]
     error = incorrect_results.shape[0] / N

@@ -14,17 +14,17 @@ C1 = [[0.2, 0],
       [0, 3]]
 P1 = 0.25
 
-M2 = [5, 5]
+M2 = [10, 5]
 C2 = [[3, 0],
       [0, 0.2]]
 P2 = 0.25
 
-M3 = [5, 5]
+M3 = [5, 10]
 C3 = [[0.5, 0],
       [0, 2]]
 P3 = 0.25
 
-M4 = [5, 5]
+M4 = [10, 10]
 C4 = [[0.1, 0],
       [0, 4]]
 P4 = 0.25
@@ -123,11 +123,6 @@ if __name__ == '__main__':
     for test_number in range(number_of_tests):
         log_likelihood_per_sample = []
         best_model_per_sample = []
-        M2[0]+=0.25
-        M3[1]+=0.25
-        M4[0]+=0.25
-        M4[1]+=0.25
-
         for sample_size in dataset_sizes:
             dataset = generate_data(sample_size)
             dataset.columns = ['x', 'y', 'label']
